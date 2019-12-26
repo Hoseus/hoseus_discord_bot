@@ -6,4 +6,4 @@ COPY . .
 
 RUN cargo install --path .
 
-CMD ["app"]
+CMD ["discord_door_bell"]
