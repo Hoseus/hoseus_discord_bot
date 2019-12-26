@@ -23,7 +23,7 @@ lazy_static! {
     static ref DISCORD_BOT_TOKEN: String = env::var("DISCORD_BOT_TOKEN").unwrap();
     static ref TELEGRAM_BOT_TOKEN: String = env::var("TELEGRAM_BOT_TOKEN").unwrap();
     static ref TELEGRAM_CHAT_ID: String = env::var("TELEGRAM_CHAT_ID").unwrap();
-    static ref REQWEST_CLIENT: ReqwestClient = ReqwestClient::new();
+    static ref REQWEST_CLIENT: reqwest::Client = ReqwestClient::new();
 }
 
 impl EventHandler for Handler {
@@ -102,5 +102,5 @@ fn send_message_to_telegram(message: &str) {
 
     println!("Sending to telegram: {}", url);
 
-    let _response = reqwest::get(url.as_str());
+    let _response = REQWEST_CLIENT.get(url.as_str()).send();
 }
