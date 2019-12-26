@@ -30,6 +30,8 @@ lazy_static! {
 
 impl EventHandler for Handler {
 
+
+
     // Set a handler for the `message` event - so that whenever a new message
     // is received - the closure (or function) passed will be called.
     //
@@ -37,13 +39,20 @@ impl EventHandler for Handler {
     // events can be dispatched simultaneously.
     fn message(&self, ctx: Context, msg: Message) {
         if msg.content == "-ring" {
-            // Sending a message can fail, due to a network error, an
-            // authentication error, or lack of permissions to post in the
-            // channel, so log to stdout when some error happens, with a
-            // description of it.
-            if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!") {
-                println!("Error sending message: {:?}", why);
-            }
+            let user: User = msg.author;
+            let user_name: &str = user.name.as_str();
+
+            let channel_id: ChannelId = msg.channel_id;
+            let channel_name: String = channel_id.name(ctx.cache().unwrap()).unwrap();
+
+            let guild_id: GuildId = msg.guild_id.unwrap();
+            let guild: PartialGuild = guild_id.to_partial_guild(ctx.http()).unwrap();
+            let guild_name: String = guild.name;
+
+            let message: String = format!("Ring! *{}* is calling in text channel *{}* in server *{}*", user_name, channel_name, guild_name);
+
+            send_message_to_telegram(message.as_str());
+
         }
     }
 
@@ -69,7 +78,7 @@ impl EventHandler for Handler {
         let guild: PartialGuild = guild_id.to_partial_guild(_ctx.http()).unwrap();
         let guild_name: String = guild.name;
 
-        let message: String = format!("{} joined to voice channel {} in server {}", user_name, channel_name, guild_name);
+        let message: String = format!("Ring! *{}* joined to voice channel *{}* in server *{}*", user_name, channel_name, guild_name);
 
         send_message_to_telegram(message.as_str());
     }
@@ -91,7 +100,7 @@ fn main() {
 }
 
 fn send_message_to_telegram(message: &str) {
-    let url: String = format!("{}/bot{}/sendMessage?chat_id={}&text={}", TELEGRAM_API_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, message);
+    let url: String = format!("{}/bot{}/sendMessage?parse_mode=Markdown&chat_id={}&text={}", TELEGRAM_API_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, message);
 
     println!("Sending to telegram: {}", url);
 
