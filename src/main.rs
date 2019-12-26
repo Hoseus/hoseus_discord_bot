@@ -11,7 +11,6 @@ use serenity::model::id::{GuildId, UserId, ChannelId};
 use serenity::model::voice::VoiceState;
 use serenity::Client as SerenityClient;
 use reqwest::Client as ReqwestClient;
-use std::time::Duration;
 use serenity::http::CacheHttp;
 use serenity::model::user::User;
 use serenity::model::guild::PartialGuild;
@@ -20,11 +19,10 @@ struct Handler;
 
 const TELEGRAM_API_URL: &str = "https://api.telegram.org";
 
-const DISCORD_BOT_TOKEN: &'static str = env!("DISCORD_BOT_TOKEN");
-const TELEGRAM_BOT_TOKEN: &'static str = env!("TELEGRAM_BOT_TOKEN");
-const TELEGRAM_CHAT_ID: &'static str = env!("TELEGRAM_CHAT_ID");
-
 lazy_static! {
+    static ref DISCORD_BOT_TOKEN: String = env::var("DISCORD_BOT_TOKEN").unwrap();
+    static ref TELEGRAM_BOT_TOKEN: String = env::var("TELEGRAM_BOT_TOKEN").unwrap();
+    static ref TELEGRAM_CHAT_ID: String = env::var("TELEGRAM_CHAT_ID").unwrap();
     static ref REQWEST_CLIENT: ReqwestClient = ReqwestClient::new();
 }
 
@@ -88,7 +86,7 @@ fn main() {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let mut serenity_client = SerenityClient::new_with_cache_update_timeout(DISCORD_BOT_TOKEN, Handler, Some(Duration::from_secs(60))).expect("Error creating client");
+    let mut serenity_client = SerenityClient::new(DISCORD_BOT_TOKEN.as_str(), Handler).expect("Error creating client");
 
     // Finally, start a single shard, and start listening to events.
     //
@@ -100,7 +98,7 @@ fn main() {
 }
 
 fn send_message_to_telegram(message: &str) {
-    let url: String = format!("{}/bot{}/sendMessage?parse_mode=Markdown&chat_id={}&text={}", TELEGRAM_API_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, message);
+    let url: String = format!("{}/bot{}/sendMessage?parse_mode=Markdown&chat_id={}&text={}", TELEGRAM_API_URL, *TELEGRAM_BOT_TOKEN, *TELEGRAM_CHAT_ID, message);
 
     println!("Sending to telegram: {}", url);
 
