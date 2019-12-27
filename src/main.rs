@@ -62,7 +62,7 @@ impl EventHandler for Handler {
                     .map(|partial_guild| partial_guild.name)
                     .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
-            send_poll_to_telegram(user_name, channel_name, guild_name);
+            send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
 
         }
     }
@@ -103,24 +103,24 @@ impl EventHandler for Handler {
                 .map(|partial_guild| partial_guild.name)
                 .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
-        send_poll_to_telegram(user_name, channel_name, guild_name);
+        send_voice_channel_poll_to_telegram(user_name, channel_name, guild_name);
     }
 }
 
-fn send_message_to_telegram(user_name: String, channel_name: String, guild_name: String) {
-    let message: String = format!("Ring! *{}* joined to voice channel *{}* in server *{}*", user_name, channel_name, guild_name);
+fn send_voice_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
+    let question: String = format!("Ring! *{}* joined to voice channel *{}* in server *{}*. Are you joining?", user_name, channel_name, guild_name);
 
-    let url_string: String = format!("{}/bot{}/sendMessage?parse_mode=Markdown&chat_id={}&text={}", TELEGRAM_API_URL, *TELEGRAM_BOT_TOKEN, *TELEGRAM_CHAT_ID, message);
-
-    println!("Sending to telegram: {}", url_string);
-
-    let _response = REQWEST_CLIENT.get(url_string.as_str()).send();
+    send_poll_to_telegram(question);
 }
 
-fn send_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
-    let message: String = format!("Ring! *{}* joined to voice channel *{}* in server *{}*. Are you joining?", user_name, channel_name, guild_name);
+fn send_text_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
+    let question: String = format!("Ring! *{}* is calling in text channel *{}* in server *{}*. Are you joining?", user_name, channel_name, guild_name);
 
-    let url_string: String = format!("{}/bot{}/sendPoll?chat_id={}&question={}&options={}", TELEGRAM_API_URL, *TELEGRAM_BOT_TOKEN, *TELEGRAM_CHAT_ID, message, TELEGRAM_POLL_OPTIONS);
+    send_poll_to_telegram(question);
+}
+
+fn send_poll_to_telegram(question: String) {
+    let url_string: String = format!("{}/bot{}/sendPoll?chat_id={}&question={}&options={}", TELEGRAM_API_URL, *TELEGRAM_BOT_TOKEN, *TELEGRAM_CHAT_ID, question, TELEGRAM_POLL_OPTIONS);
 
     println!("Sending to telegram: {}", url_string);
 
