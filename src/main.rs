@@ -61,6 +61,11 @@ impl EventHandler for Handler {
 
             send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
         }
+
+        if msg.content == "-reset_poll" {
+            unsafe { POLL_EXPIRATION = None };
+            let _result = msg.channel_id.say(ctx.http, "Success!");
+        }
     }
 
     fn ready(&self, _: Context, ready: Ready) {
