@@ -43,18 +43,9 @@ fn main() {
 impl EventHandler for Handler {
     fn message(&self, ctx: Context, msg: Message) {
         if msg.content == "-ring" {
-            /*let user: User = msg.author;
-            let user_name: String = user.name;*/
             let user_name: String = msg.author.name;
 
-            /*let channel_id: ChannelId = msg.channel_id;
-            let channel_name: String = channel_id.name(ctx.cache().unwrap()).unwrap_or_else("<not_obtained>".to_string());*/
-
             let channel_name: String = msg.channel_id.name(ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-            /*let guild_id: GuildId = msg.guild_id;
-            let guild: PartialGuild = guild_id.to_partial_guild(ctx.http()).unwrap();
-            let guild_name: String = guild.name;*/
 
             let guild_name: String =
                 msg.guild_id
@@ -72,39 +63,35 @@ impl EventHandler for Handler {
     }
 
     fn voice_state_update(&self, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
-        /*let user_id: UserId = new_voice_state.user_id;
-        let user: User = user_id.to_user(_ctx.http()).unwrap();
-        let user_name: &str = user.name.as_str();*/
-
-        let user_name: String =
-            new_voice_state.user_id
-                .to_user(_ctx.http())
-                .map(|user| user.name)
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-        /*let channel_id: ChannelId = new_voice_state.channel_id.unwrap();
-        let channel_name: String = channel_id.name(_ctx.cache().unwrap()).unwrap();*/
-
-        let channel_name: String =
-            new_voice_state.channel_id
-                .map(|channel_id| channel_id.name(_ctx.cache().unwrap()))
-                .flatten()
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-        /*let guild_id: GuildId = _guild_id.unwrap();
-        let guild: PartialGuild = guild_id.to_partial_guild(_ctx.http()).unwrap();
-        let guild_name: String = guild.name;*/
-
-        let guild_name: String =
-            _guild_id
-                .map(|guild_id| guild_id.to_partial_guild(_ctx.http()))
-                .map(|partial_guild_result| partial_guild_result.ok())
-                .flatten()
-                .map(|partial_guild| partial_guild.name)
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-        send_voice_channel_poll_to_telegram(user_name, channel_name, guild_name);
+        match new_voice_state.channel_id {
+            Some(_channel_id) => voice_state_join_channel(self, _ctx, _guild_id, _old_voice_state, new_voice_state),
+            _ => ()
+        }
     }
+}
+
+fn voice_state_join_channel(_handler: &Handler, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
+    let user_name: String =
+        new_voice_state.user_id
+            .to_user(_ctx.http())
+            .map(|user| user.name)
+            .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+    let channel_name: String =
+        new_voice_state.channel_id
+            .map(|channel_id| channel_id.name(_ctx.cache().unwrap()))
+            .flatten()
+            .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+    let guild_name: String =
+        _guild_id
+            .map(|guild_id| guild_id.to_partial_guild(_ctx.http()))
+            .map(|partial_guild_result| partial_guild_result.ok())
+            .flatten()
+            .map(|partial_guild| partial_guild.name)
+            .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+    send_voice_channel_poll_to_telegram(user_name, channel_name, guild_name);
 }
 
 fn send_voice_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
