@@ -104,10 +104,6 @@ impl EventHandler for Handler {
 fn voice_state_join_channel(_handler: &Handler, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
     let now: DateTime<Utc> = Utc::now();
 
-    println!("poll_ttl: {}", *TELEGRAM_POLL_TTL);
-    println!("poll_ttl2: {}", Duration::seconds(600));
-    println!("now: {}", now);
-
     unsafe {
         match POLL_EXPIRATION {
             Some(p) => println!("poll_expiration: {}", p),
