@@ -49,17 +49,39 @@ fn main() {
 impl EventHandler for Handler {
     fn message(&self, ctx: Context, msg: Message) {
         if msg.content == "-ring" {
-            let user_name: String = msg.author.name;
 
-            let channel_name: String = msg.channel_id.name(ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
+            unsafe {
+                match POLL_EXPIRATION {
+                    Some(p) => println!("poll_expiration: {}", p),
+                    _ => ()
+                }
+            };
 
-            let guild_name: String =
-                msg.guild_id
-                    .map(|guild_id| guild_id.to_partial_guild(ctx.http())).map(|partial_guild_result| partial_guild_result.ok()).flatten()
-                    .map(|partial_guild| partial_guild.name)
-                    .unwrap_or(NOT_OBTAINED_STRING.to_string());
+            if unsafe { POLL_EXPIRATION.is_none() || (POLL_EXPIRATION.is_some() && now > POLL_EXPIRATION.unwrap()) } {
+                let user_name: String = msg.author.name;
 
-            send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
+                let channel_name: String = msg.channel_id.name(ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+                let guild_name: String =
+                    msg.guild_id
+                        .map(|guild_id| guild_id.to_partial_guild(ctx.http())).map(|partial_guild_result| partial_guild_result.ok()).flatten()
+                        .map(|partial_guild| partial_guild.name)
+                        .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+                send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
+
+                unsafe {
+                    POLL_EXPIRATION.replace(now + *TELEGRAM_POLL_TTL);
+                    match POLL_EXPIRATION {
+                        Some(p) => println!("poll_expiration: {}", p),
+                        _ => ()
+                    }
+                };
+
+                let _result = msg.channel_id.say(ctx.http, "Success!");
+            } else {
+                let _result = msg.channel_id.say(ctx.http, "No poll was created. There is one still going!");
+            }
         }
 
         if msg.content == "-reset_poll" {
