@@ -49,6 +49,7 @@ fn main() {
 impl EventHandler for Handler {
     fn message(&self, ctx: Context, msg: Message) {
         if msg.content == "-ring" {
+            let now: DateTime<Utc> = Utc::now();
 
             unsafe {
                 match POLL_EXPIRATION {
