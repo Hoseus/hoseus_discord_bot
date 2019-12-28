@@ -83,9 +83,7 @@ impl EventHandler for Handler {
             } else {
                 let _result = msg.channel_id.say(ctx.http, "No poll was created. There is one still going!");
             }
-        }
-
-        if msg.content == "-reset_poll" {
+        } else if msg.content == "-reset_poll" {
             unsafe { POLL_EXPIRATION = None };
             let _result = msg.channel_id.say(ctx.http, "Success!");
         }
