@@ -13,6 +13,7 @@ use serenity::Client as SerenityClient;
 use reqwest::Client as ReqwestClient;
 use serenity::http::CacheHttp;
 use chrono::{DateTime, Utc, Duration};
+use std::sync::RwLock;
 
 struct Handler;
 
@@ -32,11 +33,10 @@ lazy_static! {
     static ref TELEGRAM_BOT_TOKEN: String = env::var(TELEGRAM_BOT_TOKEN_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_BOT_TOKEN_ENV).clone().as_str());
     static ref TELEGRAM_CHAT_ID: String = env::var(TELEGRAM_CHAT_ID_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_CHAT_ID_ENV).clone().as_str());
     static ref TELEGRAM_POLL_TTL: Duration = Duration::seconds(env::var(TELEGRAM_POLL_TTL_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_POLL_TTL_ENV).clone().as_str()).parse::<i64>().unwrap());
+    static ref POLL_EXPIRATION_LOCK: RwLock<Option<DateTime<Utc>>> = RwLock::new(None);
 
     static ref REQWEST_CLIENT: ReqwestClient = ReqwestClient::new();
 }
-
-static mut POLL_EXPIRATION: Option<DateTime<Utc>> = None;
 
 fn main() {
     let mut serenity_client = SerenityClient::new(DISCORD_BOT_TOKEN.as_str(), Handler).expect("Error creating Serenity client");
@@ -47,45 +47,30 @@ fn main() {
 }
 
 impl EventHandler for Handler {
-    fn message(&self, ctx: Context, msg: Message) {
+    fn message(&self, _ctx: Context, msg: Message) {
         if msg.content == "-ring" {
-            let now: DateTime<Utc> = Utc::now();
-
-            unsafe {
-                match POLL_EXPIRATION {
-                    Some(p) => println!("poll_expiration: {}", p),
-                    _ => ()
-                }
-            };
-
-            if unsafe { POLL_EXPIRATION.is_none() || (POLL_EXPIRATION.is_some() && now > POLL_EXPIRATION.unwrap()) } {
+            if !is_poll_expiration_active() || poll_expired() {
                 let user_name: String = msg.author.name;
 
-                let channel_name: String = msg.channel_id.name(ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
+                let channel_name: String = msg.channel_id.name(_ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
 
                 let guild_name: String =
                     msg.guild_id
-                        .map(|guild_id| guild_id.to_partial_guild(ctx.http())).map(|partial_guild_result| partial_guild_result.ok()).flatten()
+                        .map(|guild_id| guild_id.to_partial_guild(_ctx.http())).map(|partial_guild_result| partial_guild_result.ok()).flatten()
                         .map(|partial_guild| partial_guild.name)
                         .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
                 send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
 
-                unsafe {
-                    POLL_EXPIRATION.replace(now + *TELEGRAM_POLL_TTL);
-                    match POLL_EXPIRATION {
-                        Some(p) => println!("poll_expiration: {}", p),
-                        _ => ()
-                    }
-                };
+                set_poll_expiration();
 
-                let _result = msg.channel_id.say(ctx.http, "Success!");
+                let _result = msg.channel_id.say(_ctx.http, "Success!");
             } else {
-                let _result = msg.channel_id.say(ctx.http, "No poll was created. There is one still going!");
+                let _result = msg.channel_id.say(_ctx.http, "No poll was created. There is one still going!");
             }
         } else if msg.content == "-reset_poll" {
-            unsafe { POLL_EXPIRATION = None };
-            let _result = msg.channel_id.say(ctx.http, "Success!");
+            delete_poll_expiration();
+            let _result = msg.channel_id.say(_ctx.http, "Success!");
         }
     }
 
@@ -102,16 +87,7 @@ impl EventHandler for Handler {
 }
 
 fn voice_state_join_channel(_handler: &Handler, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
-    let now: DateTime<Utc> = Utc::now();
-
-    unsafe {
-        match POLL_EXPIRATION {
-            Some(p) => println!("poll_expiration: {}", p),
-            _ => ()
-        }
-    };
-
-    if unsafe { POLL_EXPIRATION.is_none() || (POLL_EXPIRATION.is_some() && now > POLL_EXPIRATION.unwrap()) } {
+    if !is_poll_expiration_active() || poll_expired() {
         let user_name: String =
             new_voice_state.user_id
                 .to_user(_ctx.http())
@@ -134,14 +110,25 @@ fn voice_state_join_channel(_handler: &Handler, _ctx: Context, _guild_id: Option
 
         send_voice_channel_poll_to_telegram(user_name, channel_name, guild_name);
 
-        unsafe {
-            POLL_EXPIRATION.replace(now + *TELEGRAM_POLL_TTL);
-            match POLL_EXPIRATION {
-                Some(p) => println!("poll_expiration: {}", p),
-                _ => ()
-            }
-        };
+        set_poll_expiration();
     }
+}
+
+fn is_poll_expiration_active() -> bool {
+    return (*POLL_EXPIRATION_LOCK).read().unwrap().is_some()
+}
+
+fn poll_expired() -> bool {
+    return is_poll_expiration_active() && Utc::now() > (*POLL_EXPIRATION_LOCK).read().unwrap().unwrap()
+}
+
+fn set_poll_expiration() {
+    (*POLL_EXPIRATION_LOCK).write().unwrap().replace(Utc::now() + *TELEGRAM_POLL_TTL);
+}
+
+fn delete_poll_expiration() {
+    let mut poll_expiration = (*POLL_EXPIRATION_LOCK).write().unwrap();
+    *poll_expiration = None;
 }
 
 fn send_voice_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
