@@ -192,7 +192,8 @@ async fn main() {
     let intents = GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILDS;
 
     let mut serenity_client = SerenityClient::builder(DISCORD_BOT_TOKEN.as_str(), intents)
         .event_handler(Handler)
