@@ -2,151 +2,205 @@ use std::env;
 
 #[macro_use]
 extern crate lazy_static;
+extern crate core;
 
+use frankenstein::{api_params::File, Api as FrankensteinApi, SendAnimationParams, TelegramApi};
+use rand::seq::SliceRandom;
 use serenity::{
-    model::{channel::Message, gateway::Ready},
+    client::Context,
+    framework::standard::macros::{command, group},
+    framework::standard::CommandResult,
+    framework::StandardFramework,
+    http::CacheHttp,
+    model::{channel::Message, gateway::Ready, voice::VoiceState},
     prelude::*,
+    Client as SerenityClient,
 };
-use serenity::model::id::{GuildId};
-use serenity::model::voice::VoiceState;
-use serenity::Client as SerenityClient;
-use reqwest::Client as ReqwestClient;
-use serenity::http::CacheHttp;
-use chrono::{DateTime, Utc, Duration};
-use std::sync::RwLock;
-
-struct Handler;
 
 const DISCORD_BOT_TOKEN_ENV: &str = "DISCORD_BOT_TOKEN";
 const TELEGRAM_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
 const TELEGRAM_CHAT_ID_ENV: &str = "TELEGRAM_CHAT_ID";
-const TELEGRAM_POLL_TTL_ENV: &str = "TELEGRAM_POLL_TTL";
-
-const TELEGRAM_API_URL: &str = "https://api.telegram.org";
-const TELEGRAM_POLL_OPTIONS: &str = "[\"Yes\",\"No\"]";
 
 const NOT_OBTAINED_STRING: &str = "<not_obtained>";
 
 lazy_static! {
-    static ref DISCORD_BOT_TOKEN: String = env::var(DISCORD_BOT_TOKEN_ENV).expect(format!("Env variable not defined: {}", DISCORD_BOT_TOKEN_ENV).clone().as_str());
-
-    static ref TELEGRAM_BOT_TOKEN: String = env::var(TELEGRAM_BOT_TOKEN_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_BOT_TOKEN_ENV).clone().as_str());
-    static ref TELEGRAM_CHAT_ID: String = env::var(TELEGRAM_CHAT_ID_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_CHAT_ID_ENV).clone().as_str());
-    static ref TELEGRAM_POLL_TTL: Duration = Duration::seconds(env::var(TELEGRAM_POLL_TTL_ENV).expect(format!("Env variable not defined: {}", TELEGRAM_POLL_TTL_ENV).clone().as_str()).parse::<i64>().unwrap());
-    static ref POLL_EXPIRATION_LOCK: RwLock<Option<DateTime<Utc>>> = RwLock::new(None);
-
-    static ref REQWEST_CLIENT: ReqwestClient = ReqwestClient::new();
+    static ref DISCORD_BOT_TOKEN: String = env::var(DISCORD_BOT_TOKEN_ENV).expect(
+        format!("Env variable not defined: {}", DISCORD_BOT_TOKEN_ENV)
+            .clone()
+            .as_str()
+    );
+    static ref TELEGRAM_BOT_TOKEN: String = env::var(TELEGRAM_BOT_TOKEN_ENV).expect(
+        format!("Env variable not defined: {}", TELEGRAM_BOT_TOKEN_ENV)
+            .clone()
+            .as_str()
+    );
+    static ref TELEGRAM_CHAT_ID: String = env::var(TELEGRAM_CHAT_ID_ENV).expect(
+        format!("Env variable not defined: {}", TELEGRAM_CHAT_ID_ENV)
+            .clone()
+            .as_str()
+    );
+    static ref FRANKENSTEIN_API: FrankensteinApi = FrankensteinApi::new(&TELEGRAM_BOT_TOKEN);
+    static ref ANIMATION_URLS: Vec<String> = get_animation_urls();
 }
 
-fn main() {
-    let mut serenity_client = SerenityClient::new(DISCORD_BOT_TOKEN.as_str(), Handler).expect("Error creating Serenity client");
-
-    if let Err(why) = serenity_client.start() {
-        println!("Serenity client error: {:?}", why);
+fn get_animation_urls() -> Vec<String> {
+    let file_path = "animation_urls.json".to_string();
+    let json_string: String = std::fs::read_to_string(file_path.to_string())
+        .expect(format!("Unable to read file {}", file_path).as_str());
+    let animation_urls: Vec<String> = serde_json::from_str(json_string.as_str())
+        .expect(format!("Unable to parse json in {}", file_path).as_str());
+    if animation_urls.is_empty() {
+        panic!("Animation urls list cannot be empty");
     }
+    return animation_urls;
 }
 
+#[group]
+#[description = "Hoseus bot commands"]
+#[commands(notify)]
+struct General;
+
+#[command]
+#[description = "Notify everyone via text channel"]
+async fn notify(ctx: &Context, msg: &Message) -> CommandResult {
+    let user_name: String = msg.author.name.clone();
+
+    let channel_name: String = msg
+        .channel_id
+        .name(ctx.cache().unwrap())
+        .await
+        .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+    let guild_name: String = msg
+        .guild_id
+        .map(|guild_id| guild_id.name(ctx.cache().unwrap()))
+        .flatten()
+        .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+    let animation_url: String = get_random_animation_url();
+    let message = build_text_channel_notification_message(user_name, channel_name, guild_name);
+
+    send_notification_to_telegram(animation_url, message);
+
+    msg.reply(ctx, "Success!").await?;
+
+    Ok(())
+}
+
+struct Handler;
+
+#[serenity::async_trait]
 impl EventHandler for Handler {
-    fn message(&self, _ctx: Context, msg: Message) {
-        if msg.content == "-ring" {
-            if !is_poll_expiration_active() || poll_expired() {
-                let user_name: String = msg.author.name;
-
-                let channel_name: String = msg.channel_id.name(_ctx.cache().unwrap()).unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-                let guild_name: String =
-                    msg.guild_id
-                        .map(|guild_id| guild_id.to_partial_guild(_ctx.http())).map(|partial_guild_result| partial_guild_result.ok()).flatten()
-                        .map(|partial_guild| partial_guild.name)
-                        .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-                send_text_channel_poll_to_telegram(user_name, channel_name, guild_name);
-
-                set_poll_expiration();
-
-                let _result = msg.channel_id.say(_ctx.http, "Success!");
-            } else {
-                let _result = msg.channel_id.say(_ctx.http, "No poll was created. There is one still going!");
-            }
-        } else if msg.content == "-reset_poll" {
-            delete_poll_expiration();
-            let _result = msg.channel_id.say(_ctx.http, "Success!");
-        }
+    async fn ready(&self, _: Context, ready: Ready) {
+        println!(
+            "{} connected to discord server successfully",
+            ready.user.name
+        );
     }
 
-    fn ready(&self, _: Context, ready: Ready) {
-        println!("{} connected to discord server successfully", ready.user.name);
-    }
-
-    fn voice_state_update(&self, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
-        match new_voice_state.channel_id {
-            Some(_channel_id) => voice_state_join_channel(self, _ctx, _guild_id, _old_voice_state, new_voice_state),
-            _ => ()
-        }
-    }
-}
-
-fn voice_state_join_channel(_handler: &Handler, _ctx: Context, _guild_id: Option<GuildId>, _old_voice_state: Option<VoiceState>, new_voice_state: VoiceState) {
-    if !is_poll_expiration_active() || poll_expired() {
-        let user_name: String =
-            new_voice_state.user_id
+    async fn voice_state_update(
+        &self,
+        _ctx: Context,
+        _old_voice_state: Option<VoiceState>,
+        new_voice_state: VoiceState,
+    ) {
+        if _old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
+            let user_name: String = new_voice_state
+                .user_id
                 .to_user(_ctx.http())
+                .await
                 .map(|user| user.name)
                 .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
-        let channel_name: String =
-            new_voice_state.channel_id
-                .map(|channel_id| channel_id.name(_ctx.cache().unwrap()))
+            let channel_name: String = match new_voice_state.channel_id {
+                Some(channel_id) => channel_id
+                    .name(_ctx.cache().unwrap())
+                    .await
+                    .unwrap_or(NOT_OBTAINED_STRING.to_string()),
+                None => NOT_OBTAINED_STRING.to_string(),
+            };
+
+            let guild_name: String = new_voice_state
+                .guild_id
+                .map(|guild_id| guild_id.name(_ctx.cache().unwrap()))
                 .flatten()
                 .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
-        let guild_name: String =
-            _guild_id
-                .map(|guild_id| guild_id.to_partial_guild(_ctx.http()))
-                .map(|partial_guild_result| partial_guild_result.ok())
-                .flatten()
-                .map(|partial_guild| partial_guild.name)
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-        send_voice_channel_poll_to_telegram(user_name, channel_name, guild_name);
-
-        set_poll_expiration();
+            let animation_url: String = get_random_animation_url();
+            let message =
+                build_voice_channel_notification_message(user_name, channel_name, guild_name);
+            send_notification_to_telegram(animation_url, message);
+        }
     }
 }
 
-fn is_poll_expiration_active() -> bool {
-    return (*POLL_EXPIRATION_LOCK).read().unwrap().is_some()
+fn get_random_animation_url() -> String {
+    let mut rng = rand::thread_rng();
+    return ANIMATION_URLS
+        .choose(&mut rng)
+        .expect("List cannot be empty")
+        .to_string();
 }
 
-fn poll_expired() -> bool {
-    return is_poll_expiration_active() && Utc::now() > (*POLL_EXPIRATION_LOCK).read().unwrap().unwrap()
+fn build_voice_channel_notification_message(
+    user_name: String,
+    channel_name: String,
+    guild_name: String,
+) -> String {
+    let message: String = format!(
+        "*{}* joined to voice channel *{}* in server *{}*. Are you joining?",
+        user_name, channel_name, guild_name
+    );
+
+    return message;
 }
 
-fn set_poll_expiration() {
-    (*POLL_EXPIRATION_LOCK).write().unwrap().replace(Utc::now() + *TELEGRAM_POLL_TTL);
+fn build_text_channel_notification_message(
+    user_name: String,
+    channel_name: String,
+    guild_name: String,
+) -> String {
+    let message: String = format!(
+        "*{}* is calling in text channel *{}* in server *{}*. Are you joining?",
+        user_name, channel_name, guild_name
+    );
+
+    return message;
 }
 
-fn delete_poll_expiration() {
-    let mut poll_expiration = (*POLL_EXPIRATION_LOCK).write().unwrap();
-    *poll_expiration = None;
+fn send_notification_to_telegram(animation_url: String, message: String) {
+    let send_animation_params = SendAnimationParams::builder()
+        .chat_id(TELEGRAM_CHAT_ID.to_string())
+        .animation(File::String(animation_url.to_string()))
+        .caption(message.to_string())
+        .build();
+
+    println!(
+        "Sending to telegram. Animation url: {}. Caption: {}",
+        animation_url, message
+    );
+
+    let _result = FRANKENSTEIN_API.send_animation(&send_animation_params);
 }
 
-fn send_voice_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
-    let question: String = format!("Ring! *{}* joined to voice channel *{}* in server *{}*. Are you joining?", user_name, channel_name, guild_name);
+#[tokio::main]
+async fn main() {
+    let framework = StandardFramework::new()
+        .configure(|c| c.prefix("hbot -"))
+        .group(&GENERAL_GROUP);
 
-    send_poll_to_telegram(question);
-}
+    let intents = GatewayIntents::GUILD_VOICE_STATES
+        | GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
 
-fn send_text_channel_poll_to_telegram(user_name: String, channel_name: String, guild_name: String) {
-    let question: String = format!("Ring! *{}* is calling in text channel *{}* in server *{}*. Are you joining?", user_name, channel_name, guild_name);
+    let mut serenity_client = SerenityClient::builder(DISCORD_BOT_TOKEN.as_str(), intents)
+        .event_handler(Handler)
+        .framework(framework)
+        .await
+        .expect("Error creating Serenity client");
 
-    send_poll_to_telegram(question);
-}
-
-fn send_poll_to_telegram(question: String) {
-    let url_string: String = format!("{}/bot{}/sendPoll?chat_id={}&question={}&options={}", TELEGRAM_API_URL, *TELEGRAM_BOT_TOKEN, *TELEGRAM_CHAT_ID, question, TELEGRAM_POLL_OPTIONS);
-
-    println!("Sending to telegram: {}", url_string);
-
-    let _response = REQWEST_CLIENT.get(url_string.as_str()).send();
+    if let Err(why) = serenity_client.start().await {
+        println!("Serenity client error: {:?}", why);
+    }
 }

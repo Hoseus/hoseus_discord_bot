@@ -6,4 +6,4 @@ COPY . .
 
 RUN cargo install --path .
 
-CMD ["discord_door_bell"]
+CMD ["hoseus_bot"]
