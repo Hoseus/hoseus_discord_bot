@@ -172,7 +172,7 @@ impl EventHandler for Handler {
             let response_message: String;
             match command.data.name.as_str() {
                 "notify" => {
-                    commands::notify_command::run(ctx.to_owned(), command.to_owned());
+                    commands::notify_command::run(ctx.to_owned(), command.to_owned()).await;
                     response_message = "Success!".to_string();
                 }
                 _ => response_message = "Error! Command does not exist!".to_string(),
