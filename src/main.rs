@@ -6,6 +6,7 @@ extern crate core;
 
 use frankenstein::{api_params::File, Api as FrankensteinApi, SendAnimationParams, TelegramApi};
 use rand::seq::SliceRandom;
+use serenity::model::channel::GuildChannel;
 use serenity::{
     client::Context,
     framework::standard::macros::{command, group},
@@ -105,31 +106,49 @@ impl EventHandler for Handler {
         new_voice_state: VoiceState,
     ) {
         if _old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
-            let user_name: String = new_voice_state
-                .user_id
-                .to_user(_ctx.http())
-                .await
-                .map(|user| user.name)
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
+            let guild_channel: Option<GuildChannel> = new_voice_state
+                .channel_id
+                .map(|channel_id| channel_id.to_channel_cached(_ctx.cache().unwrap()))
+                .flatten()
+                .map(|channel| channel.guild())
+                .flatten();
 
-            let channel_name: String = match new_voice_state.channel_id {
-                Some(channel_id) => channel_id
-                    .name(_ctx.cache().unwrap())
+            let member_count = match guild_channel {
+                Some(val) => val
+                    .members(_ctx.cache().unwrap())
                     .await
-                    .unwrap_or(NOT_OBTAINED_STRING.to_string()),
-                None => NOT_OBTAINED_STRING.to_string(),
+                    .map(|members| members.len())
+                    .unwrap_or(0),
+                None => 0,
             };
 
-            let guild_name: String = new_voice_state
-                .guild_id
-                .map(|guild_id| guild_id.name(_ctx.cache().unwrap()))
-                .flatten()
-                .unwrap_or(NOT_OBTAINED_STRING.to_string());
+            if member_count <= 1 {
+                let user_name: String = new_voice_state
+                    .user_id
+                    .to_user(_ctx.http())
+                    .await
+                    .map(|user| user.name)
+                    .unwrap_or(NOT_OBTAINED_STRING.to_string());
 
-            let animation_url: String = get_random_animation_url();
-            let message =
-                build_voice_channel_notification_message(user_name, channel_name, guild_name);
-            send_notification_to_telegram(animation_url, message);
+                let channel_name: String = match new_voice_state.channel_id {
+                    Some(channel_id) => channel_id
+                        .name(_ctx.cache().unwrap())
+                        .await
+                        .unwrap_or(NOT_OBTAINED_STRING.to_string()),
+                    None => NOT_OBTAINED_STRING.to_string(),
+                };
+
+                let guild_name: String = new_voice_state
+                    .guild_id
+                    .map(|guild_id| guild_id.name(_ctx.cache().unwrap()))
+                    .flatten()
+                    .unwrap_or(NOT_OBTAINED_STRING.to_string());
+
+                let animation_url: String = get_random_animation_url();
+                let message =
+                    build_voice_channel_notification_message(user_name, channel_name, guild_name);
+                send_notification_to_telegram(animation_url, message);
+            }
         }
     }
 }
