@@ -5,9 +5,9 @@ Sends a notification when someone enters a discord voice channel or when you use
 ### Usage
 
 ```
-hbot -help
+/notify
 ```
 
 ```
-hbot -notify
+/animations list
 ```
