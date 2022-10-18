@@ -28,9 +28,10 @@ pub async fn run(_ctx: Context, command: ApplicationCommandInteraction) -> Resul
 
     let sub_command_list: CommandDataOption = options.get(0).unwrap().to_owned();
 
-    if let CommandOptionType::SubCommand = sub_command_list.kind {
-        return Err("Invalid command".to_string());
-    };
+    match sub_command_list.kind {
+        CommandOptionType::SubCommand => (),
+        _ => return Err("Invalid command".to_string()),
+    }
 
     let result: String = animation::get_animation_urls().iter().enumerate().fold(
         "".to_string(),
