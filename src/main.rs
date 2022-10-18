@@ -1,181 +1,147 @@
-mod commands;
-
-use std::env;
-
 #[macro_use]
 extern crate lazy_static;
-extern crate core;
 
-use frankenstein::{api_params::File, Api as FrankensteinApi, SendAnimationParams, TelegramApi};
-use rand::seq::SliceRandom;
+use serenity::client::Context;
 use serenity::model::application::command::Command;
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
-use serenity::model::channel::GuildChannel;
-use serenity::model::id::GuildId;
-use serenity::{
-    client::Context,
-    http::CacheHttp,
-    model::{channel::Message, gateway::Ready, voice::VoiceState},
-    prelude::*,
-    Client as SerenityClient,
-};
+use serenity::model::{gateway::Ready, voice::VoiceState};
+use serenity::prelude::*;
+use serenity::Client as SerenityClient;
 
-const DISCORD_BOT_TOKEN_ENV: &str = "DISCORD_BOT_TOKEN";
-const TELEGRAM_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
-const TELEGRAM_CHAT_ID_ENV: &str = "TELEGRAM_CHAT_ID";
-
-const NOT_OBTAINED_STRING: &str = "<not_obtained>";
-
-lazy_static! {
-    static ref DISCORD_BOT_TOKEN: String = env::var(DISCORD_BOT_TOKEN_ENV).expect(
-        format!("Env variable not defined: {}", DISCORD_BOT_TOKEN_ENV)
-            .clone()
-            .as_str()
-    );
-    static ref TELEGRAM_BOT_TOKEN: String = env::var(TELEGRAM_BOT_TOKEN_ENV).expect(
-        format!("Env variable not defined: {}", TELEGRAM_BOT_TOKEN_ENV)
-            .clone()
-            .as_str()
-    );
-    static ref TELEGRAM_CHAT_ID: String = env::var(TELEGRAM_CHAT_ID_ENV).expect(
-        format!("Env variable not defined: {}", TELEGRAM_CHAT_ID_ENV)
-            .clone()
-            .as_str()
-    );
-    static ref FRANKENSTEIN_API: FrankensteinApi = FrankensteinApi::new(&TELEGRAM_BOT_TOKEN);
-    static ref ANIMATION_URLS: Vec<String> = get_animation_urls();
-}
-
-fn get_animation_urls() -> Vec<String> {
-    let file_path = "animation_urls.json".to_string();
-    let json_string: String = std::fs::read_to_string(file_path.to_string())
-        .expect(format!("Unable to read file {}", file_path).as_str());
-    let animation_urls: Vec<String> = serde_json::from_str(json_string.as_str())
-        .expect(format!("Unable to parse json in {}", file_path).as_str());
-    if animation_urls.is_empty() {
-        panic!("Animation urls list cannot be empty");
-    }
-    return animation_urls;
-}
+mod animation;
+mod commands;
+mod config;
+mod message_helper;
+mod serenity_helper;
+mod telegram;
 
 struct Handler;
 
 #[serenity::async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
+        println!("Start. Ready event. User: {}", ready.user.name);
+
         println!(
-            "Start. {} connected to discord server successfully",
+            "User {} connected to discord servers successfully",
             ready.user.name
         );
 
-        println!("Creating commands");
+        println!("Creating application commands");
 
-        let notify_command = Command::create_global_application_command(&ctx.http, |command| {
-            commands::notify_command::register(command)
-        })
-        .await;
+        if let Err(why) =
+            Command::set_global_application_commands(&ctx.http, |create_application_commands| {
+                create_application_commands
+                    .create_application_command(|create_application_command| {
+                        commands::notify_command::register(create_application_command)
+                    })
+                    .create_application_command(|create_application_command| {
+                        commands::animations_command::register(create_application_command)
+                    })
+            })
+            .await
+        {
+            println!("Error. Could not create commands. Trace: {:?}", why)
+        } else {
+            println!("Created commands");
 
-        println!("Created notify command: {:#?}", notify_command)
+            println!("End. Ready event. User: {}", ready.user.name);
+        }
     }
 
     async fn voice_state_update(
         &self,
-        _ctx: Context,
-        _old_voice_state: Option<VoiceState>,
+        ctx: Context,
+        old_voice_state: Option<VoiceState>,
         new_voice_state: VoiceState,
     ) {
-        let user_id_string: String = new_voice_state.user_id.to_string();
-        let channel_id_string: String = new_voice_state
-            .channel_id
-            .map(|channel_id| channel_id.to_string())
-            .unwrap_or(NOT_OBTAINED_STRING.to_string());
-        let guild_id_string: String = new_voice_state
-            .guild_id
-            .map(|guild_id| guild_id.to_string())
-            .unwrap_or(NOT_OBTAINED_STRING.to_string());
+        let user_name: String = serenity_helper::get_user_name_from_voice_state(
+            ctx.to_owned(),
+            new_voice_state.to_owned(),
+        )
+        .await;
+        let channel_name: String = serenity_helper::get_channel_name_from_voice_state(
+            ctx.to_owned(),
+            new_voice_state.to_owned(),
+        )
+        .await;
+        let guild_name: String = serenity_helper::get_guild_name_from_voice_state(
+            ctx.to_owned(),
+            new_voice_state.to_owned(),
+        )
+        .await;
 
         println!(
-            "Start. voice_state_update. UserId: {}. ChannelId: {}. GuildId: {}",
-            user_id_string, channel_id_string, guild_id_string
+            "Start. Voice state update event. UserName: {}. ChannelName: {}. GuildName: {}",
+            user_name.to_owned(),
+            channel_name.to_owned(),
+            guild_name.to_owned()
         );
 
-        if _old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
-            let guild_channel: Option<GuildChannel> = new_voice_state
-                .channel_id
-                .map(|channel_id| channel_id.to_channel_cached(_ctx.cache().unwrap()))
-                .flatten()
-                .map(|channel| channel.guild())
-                .flatten();
-
-            let member_count = match guild_channel {
-                Some(val) => val
-                    .members(_ctx.cache().unwrap())
-                    .await
-                    .map(|members| members.len())
-                    .unwrap_or(0),
-                None => 0,
-            };
+        if old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
+            let member_count = serenity_helper::get_voice_channel_members_count_from_voice_state(
+                ctx.to_owned(),
+                new_voice_state.to_owned(),
+            )
+            .await;
 
             if member_count <= 1 {
-                let user_name: String = new_voice_state
-                    .user_id
-                    .to_user(_ctx.http())
-                    .await
-                    .map(|user| user.name)
-                    .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-                let channel_name: String = match new_voice_state.channel_id {
-                    Some(channel_id) => channel_id
-                        .name(_ctx.cache().unwrap())
-                        .await
-                        .unwrap_or(NOT_OBTAINED_STRING.to_string()),
-                    None => NOT_OBTAINED_STRING.to_string(),
-                };
-
-                let guild_name: String = new_voice_state
-                    .guild_id
-                    .map(|guild_id| guild_id.name(_ctx.cache().unwrap()))
-                    .flatten()
-                    .unwrap_or(NOT_OBTAINED_STRING.to_string());
-
-                let animation_url: String = get_random_animation_url();
-                let message =
-                    build_voice_channel_notification_message(user_name, channel_name, guild_name);
-                send_notification_to_telegram(animation_url, message);
+                let animation_url: String = animation::get_random_animation_url();
+                let message = message_helper::build_voice_channel_notification_message(
+                    user_name.to_owned(),
+                    channel_name.to_owned(),
+                    guild_name.to_owned(),
+                );
+                telegram::send_notification_to_telegram(animation_url, message);
 
                 println!(
-                    "End. voice_state_update. UserId: {}. ChannelId: {}. GuildId: {}",
-                    user_id_string, channel_id_string, guild_id_string
+                    "End. Voice state update event. UserName: {}. ChannelName: {}. GuildName: {}",
+                    user_name.to_owned(),
+                    channel_name.to_owned(),
+                    guild_name.to_owned()
                 );
             } else {
                 println!(
-                    "Discarded. voice_state_update. Discarded because there is more than one member in voice channel. UserId: {}. ChannelId: {}. GuildId: {}",
-                    user_id_string,
-                    channel_id_string,
-                    guild_id_string
+                    "Discarded. Voice state update event. Discarded because there is more than one member in voice channel. UserName: {}. ChannelName: {}. GuildName: {}",
+                    user_name.to_owned(),
+                    channel_name.to_owned(),
+                    guild_name.to_owned()
                 );
             }
         } else {
             println!(
-                "Discarded. voice_state_update. Discarded because there is an old state for user. UserId: {}. ChannelId: {}. GuildId: {}",
-                user_id_string,
-                channel_id_string,
-                guild_id_string
+                "Discarded. Voice state update event. Discarded because there is an old state for user. UserName: {}. ChannelName: {}. GuildName: {}",
+                user_name.to_owned(),
+                channel_name.to_owned(),
+                guild_name.to_owned()
             );
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
-            println!("Received command interaction: {:#?}", command);
+            let user_name = command.user.name.to_owned();
+            let channel_name = serenity_helper::get_channel_name_from_application_command(
+                ctx.to_owned(),
+                command.to_owned(),
+            )
+            .await;
 
-            let response_message: String;
-            match command.data.name.as_str() {
-                "notify" => {
-                    commands::notify_command::run(ctx.to_owned(), command.to_owned()).await;
-                    response_message = "Success!".to_string();
+            println!(
+                "Start. Application command interaction. CommandName: {}, UserName: {}. ChannelName: {}",
+                command.data.name,
+                user_name,
+                channel_name
+            );
+
+            let command_response = match command.data.name.as_str() {
+                commands::notify_command::COMMAND_NAME => {
+                    commands::notify_command::run(ctx.to_owned(), command.to_owned()).await
                 }
-                _ => response_message = "Error! Command does not exist!".to_string(),
+                commands::animations_command::COMMAND_NAME => {
+                    commands::animations_command::run(ctx.to_owned(), command.to_owned()).await
+                }
+                _ => Err("Error! Command does not exist!".to_string()),
             };
 
             if let Err(why) = command
@@ -183,92 +149,51 @@ impl EventHandler for Handler {
                     response
                         .kind(InteractionResponseType::ChannelMessageWithSource)
                         .interaction_response_data(|message| {
-                            message.content(response_message.to_string())
+                            message.content(match command_response {
+                                Ok(success_response) => success_response,
+                                Err(error_response) => error_response,
+                            })
                         })
                 })
                 .await
             {
-                println!("Error. Cannot respond to slash command: {}", why);
+                println!("Error. Cannot respond to slash command. CommandName: {}, UserName: {}. ChannelName: {}. Trace: {:?}",
+                     command.data.name,
+                     user_name,
+                     channel_name,
+                     why
+                );
+            } else {
+                println!(
+                    "End. Application command interaction. CommandName: {}, UserName: {}. ChannelName: {}",
+                    command.data.name,
+                    user_name,
+                    channel_name
+                );
             }
         }
     }
 }
 
-fn get_random_animation_url() -> String {
-    let mut rng = rand::thread_rng();
-    return ANIMATION_URLS
-        .choose(&mut rng)
-        .expect("List cannot be empty")
-        .to_string();
-}
-
-fn get_animation_url(index: usize) -> String {
-    return ANIMATION_URLS
-        .get(index)
-        .map(|animation_url| animation_url.to_string())
-        .unwrap_or(get_random_animation_url());
-}
-
-fn build_voice_channel_notification_message(
-    user_name: String,
-    channel_name: String,
-    guild_name: String,
-) -> String {
-    let message: String = format!(
-        "*{}* joined to voice channel *{}* in server *{}*. Are you joining?",
-        user_name, channel_name, guild_name
-    );
-
-    return message;
-}
-
-fn build_text_channel_notification_message(
-    user_name: String,
-    channel_name: String,
-    guild_name: String,
-) -> String {
-    let message: String = format!(
-        "*{}* is calling in text channel *{}* in server *{}*. Are you joining?",
-        user_name, channel_name, guild_name
-    );
-
-    return message;
-}
-
-fn send_notification_to_telegram(animation_url: String, message: String) {
-    let send_animation_params = SendAnimationParams::builder()
-        .chat_id(TELEGRAM_CHAT_ID.to_string())
-        .animation(File::String(animation_url.to_string()))
-        .caption(message.to_string())
-        .build();
-
-    println!(
-        "Start. Sending to telegram. Animation url: {}. Caption: {}",
-        animation_url, message
-    );
-
-    let _result = FRANKENSTEIN_API.send_animation(&send_animation_params);
-
-    println!(
-        "End. Sent to telegram. Animation url: {}. Caption: {}",
-        animation_url, message
-    );
-}
-
 #[tokio::main]
 async fn main() {
+    println!("Start. main");
+
     let intents = GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS;
 
-    let mut serenity_client = SerenityClient::builder(DISCORD_BOT_TOKEN.as_str(), intents)
-        .event_handler(Handler)
-        .await
-        .expect("Error creating Serenity client");
+    let mut serenity_client =
+        SerenityClient::builder(config::discord_bot_token().as_str(), intents)
+            .event_handler(Handler)
+            .await
+            .expect("Error. Could not create Serenity client");
 
     if let Err(why) = serenity_client.start().await {
-        println!("Serenity client error: {:?}", why);
+        println!("Error. Serenity client error. Trace: {:?}", why);
+    } else {
+        println!("End. main");
     }
 }
