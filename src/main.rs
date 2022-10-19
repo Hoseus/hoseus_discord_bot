@@ -1,9 +1,10 @@
 #[macro_use]
 extern crate lazy_static;
 
+use crate::commands::serenity_command_helper;
 use serenity::client::Context;
 use serenity::model::application::command::Command;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
+use serenity::model::application::interaction::Interaction;
 use serenity::model::{gateway::Ready, voice::VoiceState};
 use serenity::prelude::*;
 use serenity::Client as SerenityClient;
@@ -12,7 +13,7 @@ mod animation;
 mod commands;
 mod config;
 mod message_helper;
-mod serenity_helper;
+mod serenity_model_helper;
 mod telegram;
 
 struct Handler;
@@ -55,17 +56,17 @@ impl EventHandler for Handler {
         old_voice_state: Option<VoiceState>,
         new_voice_state: VoiceState,
     ) {
-        let user_name: String = serenity_helper::get_user_name_from_voice_state(
+        let user_name: String = serenity_model_helper::get_user_name_from_voice_state(
             ctx.to_owned(),
             new_voice_state.to_owned(),
         )
         .await;
-        let channel_name: String = serenity_helper::get_channel_name_from_voice_state(
+        let channel_name: String = serenity_model_helper::get_channel_name_from_voice_state(
             ctx.to_owned(),
             new_voice_state.to_owned(),
         )
         .await;
-        let guild_name: String = serenity_helper::get_guild_name_from_voice_state(
+        let guild_name: String = serenity_model_helper::get_guild_name_from_voice_state(
             ctx.to_owned(),
             new_voice_state.to_owned(),
         )
@@ -79,11 +80,12 @@ impl EventHandler for Handler {
         );
 
         if old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
-            let member_count = serenity_helper::get_voice_channel_members_count_from_voice_state(
-                ctx.to_owned(),
-                new_voice_state.to_owned(),
-            )
-            .await;
+            let member_count =
+                serenity_model_helper::get_voice_channel_members_count_from_voice_state(
+                    ctx.to_owned(),
+                    new_voice_state.to_owned(),
+                )
+                .await;
 
             if member_count <= 1 {
                 let animation_url: String = animation::get_random_animation_url();
@@ -121,7 +123,7 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
             let user_name = command.user.name.to_owned();
-            let channel_name = serenity_helper::get_channel_name_from_application_command(
+            let channel_name = serenity_model_helper::get_channel_name_from_application_command(
                 ctx.to_owned(),
                 command.to_owned(),
             )
@@ -134,34 +136,28 @@ impl EventHandler for Handler {
                 channel_name
             );
 
-            let command_response = match command.data.name.as_str() {
+            let command_interaction_result = match command.data.name.as_str() {
                 commands::notify_command::COMMAND_NAME => {
                     commands::notify_command::run(ctx.to_owned(), command.to_owned()).await
                 }
                 commands::animations_command::COMMAND_NAME => {
                     commands::animations_command::run(ctx.to_owned(), command.to_owned()).await
                 }
-                _ => Err("Error! Command does not exist!".to_string()),
+                _ => {
+                    serenity_command_helper::respond_interaction_with_string(
+                        ctx,
+                        command.to_owned(),
+                        "Error! Command does not exist!".to_string(),
+                    )
+                    .await
+                }
             };
 
-            if let Err(why) = command
-                .create_interaction_response(&ctx.http, |response| {
-                    response
-                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| {
-                            message.content(match command_response {
-                                Ok(success_response) => success_response,
-                                Err(error_response) => error_response,
-                            })
-                        })
-                })
-                .await
-            {
-                println!("Error. Cannot respond to slash command. CommandName: {}, UserName: {}. ChannelName: {}. Trace: {:?}",
+            if let Err(_) = command_interaction_result {
+                println!("Error. Failure running command. CommandName: {}, UserName: {}. ChannelName: {}.",
                      command.data.name,
                      user_name,
                      channel_name,
-                     why
                 );
             } else {
                 println!(
