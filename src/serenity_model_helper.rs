@@ -7,13 +7,27 @@ use serenity::model::prelude::VoiceState;
 
 pub const NOT_OBTAINED_STRING: &str = "<not_obtained>";
 
+async fn get_user_name2(ctx: Context, user_id: Option<UserId>) -> String {
+    match user_id {
+        Some(some_user_id) => {
+            some_user_id
+                .to_user_cached(ctx.cache().unwrap())
+                .await
+                .unwrap()
+                .name
+        }
+        None => NOT_OBTAINED_STRING.to_string(),
+    }
+}
+
 async fn get_user_name(ctx: Context, user_id: Option<UserId>) -> String {
     match user_id {
-        Some(some_user_id) => some_user_id
-            .to_user_cached(ctx.cache().unwrap())
-            .await
-            .map(|user| user.name)
-            .unwrap_or(NOT_OBTAINED_STRING.to_string()),
+        Some(some_user_id) => {
+            let user_option = some_user_id.to_user_cached(ctx.cache().unwrap()).await;
+            user_option
+                .map(|user| user.name)
+                .unwrap_or(NOT_OBTAINED_STRING.to_string())
+        }
         None => NOT_OBTAINED_STRING.to_string(),
     }
 }
@@ -55,7 +69,7 @@ async fn get_voice_channel_members_count(ctx: Context, channel_id: Option<Channe
 }
 
 pub async fn get_user_name_from_voice_state(ctx: Context, voice_state: VoiceState) -> String {
-    get_user_name(ctx, Some(voice_state.user_id)).await
+    get_user_name2(ctx, Some(voice_state.user_id)).await
 }
 
 pub async fn get_channel_name_from_voice_state(ctx: Context, voice_state: VoiceState) -> String {
