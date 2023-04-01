@@ -5,6 +5,7 @@ use std::string::ToString;
 const DISCORD_BOT_TOKEN_ENV: &str = "DISCORD_BOT_TOKEN";
 const TELEGRAM_BOT_TOKEN_ENV: &str = "TELEGRAM_BOT_TOKEN";
 const TELEGRAM_CHAT_ID_ENV: &str = "TELEGRAM_CHAT_ID";
+const TELEGRAM_INVITE_LINK_ENV: &str = "TELEGRAM_INVITE_LINK";
 
 lazy_static! {
     static ref DISCORD_BOT_TOKEN: String = env::var(DISCORD_BOT_TOKEN_ENV)
@@ -13,6 +14,8 @@ lazy_static! {
         .expect(format!("Env variable not defined: {}", TELEGRAM_BOT_TOKEN_ENV).borrow());
     static ref TELEGRAM_CHAT_ID: String = env::var(TELEGRAM_CHAT_ID_ENV)
         .expect(format!("Env variable not defined: {}", TELEGRAM_CHAT_ID_ENV).borrow());
+    static ref TELEGRAM_INVITE_LINK: String = env::var(TELEGRAM_INVITE_LINK_ENV)
+        .expect(format!("Env variable not defined: {}", TELEGRAM_INVITE_LINK_ENV).borrow());
 }
 
 pub fn discord_bot_token() -> String {
@@ -25,4 +28,8 @@ pub fn telegram_bot_token() -> String {
 
 pub fn telegram_chat_id() -> String {
     TELEGRAM_CHAT_ID.to_string()
+}
+
+pub fn telegram_invite_link() -> String {
+    TELEGRAM_INVITE_LINK.to_string()
 }

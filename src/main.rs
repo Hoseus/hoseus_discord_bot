@@ -1,13 +1,14 @@
 #[macro_use]
 extern crate lazy_static;
 
-use crate::commands::serenity_command_helper;
+use serenity::Client as SerenityClient;
 use serenity::client::Context;
+use serenity::model::{gateway::Ready, voice::VoiceState};
 use serenity::model::application::command::Command;
 use serenity::model::application::interaction::Interaction;
-use serenity::model::{gateway::Ready, voice::VoiceState};
 use serenity::prelude::*;
-use serenity::Client as SerenityClient;
+
+use crate::commands::serenity_command_helper;
 
 mod animation;
 mod commands;
@@ -38,6 +39,9 @@ impl EventHandler for Handler {
                     })
                     .create_application_command(|create_application_command| {
                         commands::animations_command::register(create_application_command)
+                    })
+                    .create_application_command(|create_application_command| {
+                        commands::invite_command::register(create_application_command)
                     })
             })
             .await
@@ -142,6 +146,9 @@ impl EventHandler for Handler {
                 }
                 commands::animations_command::COMMAND_NAME => {
                     commands::animations_command::run(ctx.to_owned(), command.to_owned()).await
+                }
+                commands::invite_command::COMMAND_NAME => {
+                    commands::invite_command::run(ctx.to_owned(), command.to_owned()).await
                 }
                 _ => {
                     serenity_command_helper::respond_interaction_with_string(
