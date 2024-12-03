@@ -1,12 +1,7 @@
-#[macro_use]
-extern crate lazy_static;
-
-use serenity::Client as SerenityClient;
-use serenity::client::Context;
-use serenity::model::{gateway::Ready, voice::VoiceState};
-use serenity::model::application::command::Command;
-use serenity::model::application::interaction::Interaction;
-use serenity::prelude::*;
+use serenity::all::{
+    Client as SerenityClient, Command, Context, EventHandler, GatewayIntents, Interaction, Ready,
+    VoiceState,
+};
 
 use crate::commands::serenity_command_helper;
 
@@ -22,35 +17,32 @@ struct Handler;
 #[serenity::async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("Start. Ready event. User: {}", ready.user.name);
+        let user_name = ready.user.name.as_str();
+
+        println!("Start. Ready event. User: {}", user_name);
 
         println!(
             "User {} connected to discord servers successfully",
-            ready.user.name
+            user_name
         );
 
         println!("Creating application commands");
 
-        if let Err(why) =
-            Command::set_global_application_commands(&ctx.http, |create_application_commands| {
-                create_application_commands
-                    .create_application_command(|create_application_command| {
-                        commands::notify_command::register(create_application_command)
-                    })
-                    .create_application_command(|create_application_command| {
-                        commands::animations_command::register(create_application_command)
-                    })
-                    .create_application_command(|create_application_command| {
-                        commands::invite_command::register(create_application_command)
-                    })
-            })
-            .await
+        if let Err(why) = Command::set_global_commands(
+            &ctx,
+            vec![
+                commands::notify_command::register(),
+                commands::animations_command::register(),
+                commands::invite_command::register(),
+            ],
+        )
+        .await
         {
             println!("Error. Could not create commands. Trace: {:?}", why)
         } else {
             println!("Created commands");
 
-            println!("End. Ready event. User: {}", ready.user.name);
+            println!("End. Ready event. User: {}", user_name);
         }
     }
 
@@ -60,101 +52,92 @@ impl EventHandler for Handler {
         old_voice_state: Option<VoiceState>,
         new_voice_state: VoiceState,
     ) {
-        let user_name: String = serenity_model_helper::get_user_name_from_voice_state(
-            ctx.to_owned(),
-            new_voice_state.to_owned(),
-        )
-        .await;
-        let channel_name: String = serenity_model_helper::get_channel_name_from_voice_state(
-            ctx.to_owned(),
-            new_voice_state.to_owned(),
-        )
-        .await;
-        let guild_name: String = serenity_model_helper::get_guild_name_from_voice_state(
-            ctx.to_owned(),
-            new_voice_state.to_owned(),
-        )
-        .await;
+        let user_name: &str =
+            &serenity_model_helper::get_user_name_from_voice_state(&ctx, &new_voice_state)
+                .await;
+
+        let channel_name: &str =
+            &serenity_model_helper::get_channel_name_from_voice_state(&ctx, &new_voice_state)
+                .await;
+
+        let guild_name: &str =
+            &serenity_model_helper::get_guild_name_from_voice_state(&ctx, &new_voice_state)
+                .await;
 
         println!(
             "Start. Voice state update event. UserName: {}. ChannelName: {}. GuildName: {}",
-            user_name.to_owned(),
-            channel_name.to_owned(),
-            guild_name.to_owned()
+            user_name, channel_name, guild_name
         );
 
         if old_voice_state.is_none() && new_voice_state.channel_id.is_some() {
             let member_count =
                 serenity_model_helper::get_voice_channel_members_count_from_voice_state(
-                    ctx.to_owned(),
-                    new_voice_state.to_owned(),
+                    &ctx,
+                    &new_voice_state,
                 )
                 .await;
 
             if member_count <= 1 {
-                let animation_url: String = animation::get_random_animation_url();
-                let message = message_helper::build_voice_channel_notification_message(
-                    user_name.to_owned(),
-                    channel_name.to_owned(),
-                    guild_name.to_owned(),
+                let animation_url: &str = &animation::get_random_animation_url();
+                let message: &str = &message_helper::build_voice_channel_notification_message(
+                    user_name,
+                    channel_name,
+                    guild_name,
                 );
                 telegram::send_notification_to_telegram(animation_url, message);
 
                 println!(
                     "End. Voice state update event. UserName: {}. ChannelName: {}. GuildName: {}",
-                    user_name.to_owned(),
-                    channel_name.to_owned(),
-                    guild_name.to_owned()
+                    user_name, channel_name, guild_name
                 );
             } else {
                 println!(
                     "Discarded. Voice state update event. Discarded because there is more than one member in voice channel. UserName: {}. ChannelName: {}. GuildName: {}",
-                    user_name.to_owned(),
-                    channel_name.to_owned(),
-                    guild_name.to_owned()
+                    user_name,
+                    channel_name,
+                    guild_name
                 );
             }
         } else {
             println!(
                 "Discarded. Voice state update event. Discarded because there is an old state for user. UserName: {}. ChannelName: {}. GuildName: {}",
-                user_name.to_owned(),
-                channel_name.to_owned(),
-                guild_name.to_owned()
+                user_name,
+                channel_name,
+                guild_name
             );
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            let user_name = command.user.name.to_owned();
-            let channel_name = serenity_model_helper::get_channel_name_from_application_command(
-                ctx.to_owned(),
-                command.to_owned(),
-            )
-            .await;
+        if let Interaction::Command(command) = interaction {
+            let command_name: &str = command.data.name.as_str();
+            let user_name: &str = command.user.name.as_str();
+            let channel_name: &str =
+                &serenity_model_helper::get_channel_name_from_application_command(&ctx, &command)
+                    .await;
 
             println!(
                 "Start. Application command interaction. CommandName: {}, UserName: {}. ChannelName: {}",
-                command.data.name,
+                command_name,
                 user_name,
                 channel_name
             );
 
-            let command_interaction_result = match command.data.name.as_str() {
+            let command_interaction_result = match command_name {
                 commands::notify_command::COMMAND_NAME => {
-                    commands::notify_command::run(ctx.to_owned(), command.to_owned()).await
+                    commands::notify_command::run(&ctx, &command).await
                 }
                 commands::animations_command::COMMAND_NAME => {
-                    commands::animations_command::run(ctx.to_owned(), command.to_owned()).await
+                    commands::animations_command::run(&ctx, &command).await
                 }
                 commands::invite_command::COMMAND_NAME => {
-                    commands::invite_command::run(ctx.to_owned(), command.to_owned()).await
+                    commands::invite_command::run(&ctx, &command).await
                 }
                 _ => {
                     serenity_command_helper::respond_interaction_with_string(
-                        ctx,
-                        command.to_owned(),
-                        "Error! Command does not exist!".to_string(),
+                        &ctx,
+                        &command,
+                        "Error! Command does not exist!",
                     )
                     .await
                 }
@@ -162,14 +145,14 @@ impl EventHandler for Handler {
 
             if let Err(_) = command_interaction_result {
                 println!("Error. Failure running command. CommandName: {}, UserName: {}. ChannelName: {}.",
-                     command.data.name,
+                     command_name,
                      user_name,
                      channel_name,
                 );
             } else {
                 println!(
                     "End. Application command interaction. CommandName: {}, UserName: {}. ChannelName: {}",
-                    command.data.name,
+                    command_name,
                     user_name,
                     channel_name
                 );

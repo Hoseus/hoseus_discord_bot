@@ -1,21 +1,19 @@
-use std::borrow::Borrow;
-
-use frankenstein::{SendAnimationParams, TelegramApi};
+use frankenstein::api_params::FileUpload;
 use frankenstein::Api as FrankensteinApi;
-use frankenstein::api_params::File;
+use frankenstein::{SendAnimationParams, TelegramApi};
+use std::ops::Deref;
+use std::sync::LazyLock;
 
 use crate::config;
 
-lazy_static! {
-    static ref FRANKENSTEIN_API: FrankensteinApi =
-        FrankensteinApi::new(&config::telegram_bot_token().borrow());
-}
+static FRANKENSTEIN_API: LazyLock<FrankensteinApi> =
+    LazyLock::new(|| FrankensteinApi::new(config::telegram_bot_token().as_str()));
 
-pub fn send_notification_to_telegram(animation_url: String, message: String) {
-    let send_animation_params = SendAnimationParams::builder()
-        .chat_id(config::telegram_chat_id().to_string())
-        .animation(File::String(animation_url.to_string()))
-        .caption(message.to_string())
+pub fn send_notification_to_telegram(animation_url: &str, message: &str) {
+    let send_animation_params: SendAnimationParams = SendAnimationParams::builder()
+        .chat_id(config::telegram_chat_id())
+        .animation(FileUpload::String(animation_url.to_string()))
+        .caption(message)
         .build();
 
     println!(
@@ -23,9 +21,13 @@ pub fn send_notification_to_telegram(animation_url: String, message: String) {
         animation_url, message
     );
 
-    if let Err(why) = FRANKENSTEIN_API.send_animation(&send_animation_params) {
+    if let Err(why) = FRANKENSTEIN_API
+        .deref()
+        .send_animation(&send_animation_params)
+    {
         println!(
-            "Error. Could not send message to telegram. Trace: {:?}", why
+            "Error. Could not send message to telegram. Trace: {:?}",
+            why
         );
     } else {
         println!(
