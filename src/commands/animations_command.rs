@@ -1,75 +1,61 @@
-use serenity::builder::{CreateApplicationCommand, CreateEmbed};
-use serenity::client::Context;
-use serenity::model::application::command::CommandOptionType;
-use serenity::model::application::interaction::application_command::{
-    ApplicationCommandInteraction, CommandDataOption,
+use serenity::all::{
+    CommandDataOption, CommandInteraction, CommandOptionType, Context, CreateCommand,
+    CreateCommandOption, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
 };
-use serenity::model::application::interaction::InteractionResponseType;
 
 use crate::animation;
 use crate::commands::serenity_command_helper;
 
 pub const COMMAND_NAME: &str = "animations";
 
-pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
-    command
-        .name(COMMAND_NAME)
+pub fn register() -> CreateCommand {
+    CreateCommand::new(COMMAND_NAME)
         .description("Notify everyone via text channel")
-        .create_option(|option| {
-            option
-                .name("list")
-                .description("List all animation urls")
-                .kind(CommandOptionType::SubCommand)
-        })
+        .add_option(CreateCommandOption::new(
+            CommandOptionType::SubCommand,
+            "list",
+            "List all animation urls",
+        ))
 }
 
-pub async fn run(ctx: Context, command: ApplicationCommandInteraction) -> Result<(), ()> {
-    let options: &[CommandDataOption] = &command.data.options;
+pub async fn run(ctx: &Context, command: &CommandInteraction) -> Result<(), ()> {
+    let options: &[CommandDataOption] = command.data.options.as_slice();
 
-    let sub_command_list: CommandDataOption = options.get(0).unwrap().to_owned();
+    let sub_command_list: &CommandDataOption = options.get(0).unwrap();
 
-    match sub_command_list.kind {
+    match sub_command_list.kind() {
         CommandOptionType::SubCommand => (),
-        _ => {
-            return respond_fail_interaction(ctx, command.to_owned(), "Invalid command".to_string())
-                .await
-        }
+        _ => return respond_fail_interaction(ctx, command, "Invalid command").await,
     }
 
-    respond_success_interaction(ctx, command.to_owned(), animation::get_animation_urls()).await
+    respond_success_interaction(ctx, command, animation::get_animation_urls()).await
 }
 
 async fn respond_success_interaction(
-    ctx: Context,
-    command: ApplicationCommandInteraction,
+    ctx: &Context,
+    command: &CommandInteraction,
     animation_urls: Vec<String>,
 ) -> Result<(), ()> {
-    serenity_command_helper::respond_interaction(ctx, command.to_owned(), |response| {
-        response
-            .kind(InteractionResponseType::ChannelMessageWithSource)
-            .interaction_response_data(|message| {
-                message.add_embeds(
-                    animation_urls
-                        .iter()
-                        .enumerate()
-                        .map(|(index, animation_url)| {
-                            CreateEmbed::default()
-                                .title(index.to_string())
-                                .image(animation_url.to_owned())
-                                .to_owned()
-                        })
-                        .collect(),
-                )
-            })
+    serenity_command_helper::respond_interaction(ctx, command, || {
+        CreateInteractionResponse::Message(
+            CreateInteractionResponseMessage::new().add_embeds(
+                animation_urls
+                    .iter()
+                    .enumerate()
+                    .map(|(index, animation_url)| {
+                        CreateEmbed::new().title(index.to_string()).image(animation_url)
+                    })
+                    .collect(),
+            ),
+        )
     })
     .await
 }
 
 async fn respond_fail_interaction(
-    ctx: Context,
-    command: ApplicationCommandInteraction,
-    error_message: String,
+    ctx: &Context,
+    command: &CommandInteraction,
+    error_message: &str,
 ) -> Result<(), ()> {
-    serenity_command_helper::respond_interaction_with_string(ctx, command.to_owned(), error_message)
-        .await
+    serenity_command_helper::respond_interaction_with_string(ctx, command, error_message).await
 }

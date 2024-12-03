@@ -1,13 +1,12 @@
 [package]
 name = "hoseus_bot"
-version = "2.1.0"
+version = "3.0.0"
 authors = ["Hoseus <rjllopis@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.22.0", features = ["full"] }
-lazy_static = "1.4.0"
-serenity = { version = "0.11.5", default-features = false, features = ["builder", "cache", "client", "gateway", "http", "model", "utils", "rustls_backend"]}
-frankenstein = "0.20.0"
-serde_json = "1.0.86"
+tokio = { version = "1.41.1", features = ["full"] }
+serenity = { version = "0.12.4", default-features = false, features = ["builder", "cache", "temp_cache", "client", "gateway", "http", "model", "utils", "rustls_backend"]}
+frankenstein = "0.35.0"
+serde_json = "1.0.133"
 rand = "0.8.5"

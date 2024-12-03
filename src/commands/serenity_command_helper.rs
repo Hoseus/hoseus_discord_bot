@@ -1,18 +1,13 @@
-use serenity::builder::CreateInteractionResponse;
-use serenity::client::Context;
-use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
-use serenity::model::application::interaction::InteractionResponseType;
+use serenity::all::{
+    CommandInteraction, Context, CreateInteractionResponse, CreateInteractionResponseMessage,
+};
 
-pub async fn respond_interaction<'a, F>(
-    ctx: Context,
-    command: ApplicationCommandInteraction,
-    f: F,
-) -> Result<(), ()>
-where
-    for<'b> F:
-        FnOnce(&'b mut CreateInteractionResponse<'a>) -> &'b mut CreateInteractionResponse<'a>,
-{
-    if let Err(why) = command.create_interaction_response(&ctx.http, f).await {
+pub async fn respond_interaction(
+    ctx: &Context,
+    command: &CommandInteraction,
+    f: impl Fn() -> CreateInteractionResponse,
+) -> Result<(), ()> {
+    if let Err(why) = command.create_response(ctx, f()).await {
         println!(
             "Error. Cannot respond to slash command. CommandName: {}. Trace: {:?}",
             command.data.name, why
@@ -25,14 +20,14 @@ where
 }
 
 pub async fn respond_interaction_with_string(
-    _ctx: Context,
-    command: ApplicationCommandInteraction,
-    response_message: String,
+    ctx: &Context,
+    command: &CommandInteraction,
+    response_message: &str,
 ) -> Result<(), ()> {
-    respond_interaction(_ctx, command.to_owned(), |response| {
-        response
-            .kind(InteractionResponseType::ChannelMessageWithSource)
-            .interaction_response_data(|message| message.content(response_message))
+    respond_interaction(ctx, command, || {
+        CreateInteractionResponse::Message(
+            CreateInteractionResponseMessage::new().content(response_message),
+        )
     })
     .await
 }
